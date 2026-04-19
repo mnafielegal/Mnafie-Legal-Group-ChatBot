@@ -13,7 +13,6 @@ router = APIRouter()
 async def root():
     return {"message": "Mnafie Legal Group Chat API"}
 
-
 @router.get("/health")
 async def health():
     return {"status": "ok"}

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from settings import settings
-from tools import rag_tool
+from tools import AttachmentSummaryTool, rag_tool
 
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -35,12 +35,15 @@ DEFAULT_SYSTEM_PROMPT = (
     "إذا كان الطلب خارج النطاق القانوني أو خارج خدمات مجموعة منافع القانونية أو كانت المعلومة غير متوفرة أو الطلب غامضًا، فاعتبره تحويلًا بشريًا. "
     "إذا كانت الرسالة تحتاج متابعة من الموظف المختص فاجعل transfer=true وحدد transfer_to بالشخص المناسب، وإلا فاجعل transfer=false و transfer_to=null. "
     "عند التحويل، قدّم للعميل ردًا مهنيًا طبيعيًا مناسبًا لسياق الكلام، وإذا كان السياق يتضمن معلومة موثوقة مفيدة فاذكرها باختصار قبل الإشارة إلى المتابعة. "
+    "عند تحويل الطلب لمراجعة مرفق أو مستند، ابدأ الرد بصياغة عامة ومهنية مثل: شكرًا لتواصلك معنا. "
+    "تجنب استخدام عبارة: شكرًا لإرسال المرفق. "
+    "والصياغة المفضلة في هذه الحالة هي: شكرًا لتواصلك معنا. سأقوم بتحويل طلبك للمتابعة مع فريقنا المختص لمراجعة المحتوى. يُرجى الانتظار للحظة. "
     "قواعد التحويل: "
     "1) أي طلب يتعلق بالمحاسبة أو الفواتير أو المدفوعات أو الإيصالات أو أتعاب القضايا أو الرسوم أو الغرامات أو الأمانات أو أي موضوع مالي أو إداري محاسبي يكون transfer_to = 'mohamed musa'. "
     "2) أي استفسار أو طلب أو متابعة من عميل حالي يتعلق بالخدمة أو السكرتارية أو الدعم أو المتابعة أو تنفيذ طلب أو الإحالة للقسم المختص أو أي خدمة عامة لعميل حالي يكون transfer_to = 'eslam ghaleb'. "
     "3) أي تواصل جديد من حملة إعلانية، أو أي عميل جديد يسأل عن الخدمات، أو التسويق، أو الحملات الإعلانية، أو العروض، أو عرض السعر، أو تكلفة قضية، أو التعاقد، أو تأسيس الشركات، أو تعديلاتها، أو التراخيص، أو أي خدمة قانونية جديدة يكون transfer_to = 'wogoud'. "
-    "4) إذا احتاجت المحادثة متابعة بشرية ولم تنطبق أي فئة من الفئات السابقة فاجعل transfer_to = 'human customer service'. "
-    "إذا كان transfer=true فيجب أن تكون قيمة transfer_to واحدة من: 'mohamed musa' أو 'eslam ghaleb' أو 'wogoud' أو 'human customer service'. "
+    "4) إذا احتاجت المحادثة متابعة بشرية ولم تنطبق أي فئة من الفئات السابقة فاجعل transfer_to = 'eslam ghaleb'. "
+    "إذا كان transfer=true فيجب أن تكون قيمة transfer_to واحدة من: 'mohamed musa' أو 'eslam ghaleb' أو 'wogoud' فقط. "
     "إذا كان transfer=false فاجعل transfer_to = null. "
 )
 
@@ -48,10 +51,16 @@ DEFAULT_SYSTEM_PROMPT = (
 class ChatbotResponse(BaseModel):
     reply: str = Field(..., description="Reply shown to the user.")
     transfer: bool = Field(..., description="Whether the chat should be transferred to a human.")
-    transfer_to: str | None = Field(
+    transfer_to: Literal["mohamed musa", "eslam ghaleb", "wogoud"] | None = Field(
         default=None,
         description="The human owner for the transfer, or null when no transfer is needed.",
     )
+
+
+FORCED_ATTACHMENT_TRANSFER_REPLY = (
+    "شكرًا لتواصلك معنا. سأقوم بتحويل طلبك للمتابعة مع فريقنا المختص لمراجعة المحتوى. يُرجى الانتظار للحظة."
+)
+ATTACHMENT_SUMMARY_MARKER = "ملخص موجز للمرفق:"
 
 
 class ChatMemory:
@@ -92,6 +101,7 @@ class LangChainChatBot:
             ]
         )
         self.chain = self.prompt | self.structured_llm
+        self.attachment_summary_tool = AttachmentSummaryTool(self.llm)
         self.agent_executor = AgentExecutor(self)
 
     def _build_llm(self):
@@ -102,6 +112,20 @@ class LangChainChatBot:
             api_key=settings.OPENAI_API_KEY,
             model=settings.OPENAI_MODEL,
         )
+
+    def _is_attachment_transfer_message(self, message: str) -> bool:
+        return (
+            message.startswith("أرسل العميل مرفقًا")
+            or "رابط المرفق:" in message
+            or ATTACHMENT_SUMMARY_MARKER in message
+        )
+
+    def _extract_attachment_summary(self, message: str) -> str | None:
+        if ATTACHMENT_SUMMARY_MARKER not in message:
+            return None
+
+        summary = message.split(ATTACHMENT_SUMMARY_MARKER, maxsplit=1)[1].strip()
+        return summary or None
 
     def generate_reply(self, message: str) -> ChatbotResponse:
         knowledge_context = rag_tool.retrieve_context(message)
@@ -114,6 +138,12 @@ class LangChainChatBot:
         )
         if not response.reply.strip():
             response.reply = "شكرًا لك، تم استلام طلبك."
+        elif response.transfer and self._is_attachment_transfer_message(message):
+            attachment_summary = self._extract_attachment_summary(message)
+            if attachment_summary:
+                response.reply = f"{attachment_summary}\n\n{FORCED_ATTACHMENT_TRANSFER_REPLY}"
+            else:
+                response.reply = FORCED_ATTACHMENT_TRANSFER_REPLY
 
         self.memory.add_user_message(message)
         self.memory.add_ai_message(response.reply)

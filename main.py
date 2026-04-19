@@ -1,5 +1,5 @@
-import logging
 import json
+import logging
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI
@@ -8,10 +8,10 @@ from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.sessions import router as sessions_router
-from core.session_manager import session_manager
 from core.chat_request import ChatRequest
+from core.session_manager import session_manager
 from database import db
-from tools import rag_tool
+from tools import build_effective_message, rag_tool
 
 logger = logging.getLogger(__name__)
 
@@ -67,17 +67,17 @@ async def parse_chat_request(request: Request) -> ChatRequest:
         raise HTTPException(status_code=422, detail="Body must contain session_id and message.")
 
     try:
-        chat_request = ChatRequest.model_validate(data)
-        return chat_request
+        return ChatRequest.model_validate(data)
     except Exception as exc:
-        raise HTTPException(status_code=422, detail="session_id and message are required.") from exc
+        raise HTTPException(
+            status_code=422,
+            detail="session_id is required. message may be empty only when attachment_type or attachment_url is provided.",
+        ) from exc
 
 
 @app.post("/chat")
 async def chat(request: Request):
     chat_request = await parse_chat_request(request)
-    if not chat_request.message.strip():
-        raise HTTPException(status_code=422, detail="message cannot be empty.")
 
     session = None
     try:
@@ -86,11 +86,18 @@ async def chat(request: Request):
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-        session_manager.update_session_title(chat_request.session_id, chat_request.message)
-        session_manager.save_message(chat_request.session_id, "user", chat_request.message)
+        effective_message = build_effective_message(chat_request, session.agent.attachment_summary_tool)
+        if not effective_message:
+            raise HTTPException(
+                status_code=422,
+                detail="message cannot be empty unless attachment_type or attachment_url is provided.",
+            )
+
+        session_manager.update_session_title(chat_request.session_id, effective_message)
+        session_manager.save_message(chat_request.session_id, "user", effective_message)
 
         try:
-            response = session.generate_reply(chat_request.message)
+            response = session.generate_reply(effective_message)
         except Exception as exc:
             logger.exception("Failed to generate reply for session %s", chat_request.session_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -98,6 +105,7 @@ async def chat(request: Request):
         session_manager.save_message(chat_request.session_id, "assistant", response.reply)
         return {
             "session_id": chat_request.session_id,
+            "message_used": effective_message,
             "reply": response.reply,
             "transfer": response.transfer,
             "transfer_to": response.transfer_to,
