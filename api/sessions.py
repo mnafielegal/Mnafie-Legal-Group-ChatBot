@@ -1,4 +1,6 @@
 from fastapi import APIRouter
+from fastapi import Response
+
 from fastapi.responses import JSONResponse
 
 from core.session_manager import session_manager
@@ -11,6 +13,14 @@ router = APIRouter()
 async def root():
     return {"message": "Mnafie Legal Group Chat API"}
 
+
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@router.head("/health")
+async def health_head():
+    return Response(status_code=200)
 
 @router.post("/sessions")
 async def create_session():
