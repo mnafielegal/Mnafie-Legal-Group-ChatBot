@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+huggingface_hub
+langchain
+langchain-anthropic
+langchain-openai
+pypdf
+pydantic-settings
+sqlalchemy
+psycopg2-binary
+python-dotenv
