@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     MAX_CONCURRENT_SESSIONS: int = 10
     SESSION_TIMEOUT_MINUTES: int = 60
+    MAX_TRANSFER_REPLY_LENGTH: int = 150
 
     BASE_DIR: Path = Path(__file__).parent.parent
 

@@ -28,6 +28,11 @@ DEFAULT_SYSTEM_PROMPT = (
     "لا تذكر من نفسك أنك بوت أو برنامج أو ذكاء اصطناعي. "
     "أسئلة الهوية العامة أو المجاملة أو الشكر ليست سببًا للتحويل. "
     "الأصل أن يكون الرد قصيرًا وطبيعيًا، لكن إذا كان في السياق قالب تسويقي معتمد فاستخدمه كما هو لأنه استثناء مقصود. "
+    "اجعل reply في أغلب الحالات جملة واحدة أو جملتين قصيرتين كحد أقصى، وتجنب الشرح الزائد أو تعداد التفاصيل ما لم تكن ضرورية لفهم الإجابة. "
+    "إذا كان الجواب المباشر نعم أو لا أو خلاصة قصيرة، فابدأ به مباشرة ثم أضف المتابعة اللازمة باختصار شديد. "
+    "اجعل الإجابة مرتبطة بالسؤال المطروح بدقة، ولا تضف معلومات جانبية لا تجيب مباشرة عن مقصود العميل. "
+    "إذا كان سؤال العميل عن إمكانية تنفيذ الخدمة أو إمكانية المساعدة، فأجب أولًا بتأكيد الإمكانية أو عدمها بصياغة قصيرة جدًا، ثم اذكر التحويل للموظف المختص عند الحاجة من غير شرح إضافي. "
+    "عند كون القرار النهائي هو التحويل، فالأصل ألا تشرح التفاصيل أو الشروط أو الإجراءات أو التكاليف داخل reply، إلا إذا كانت كلمة أو عبارة قصيرة لا غنى عنها لفهم الجواب المباشر. "
     "إذا وجدت العلامة [LINE] في القالب المسترجع فحوّلها إلى سطر جديد فعلي داخل reply ولا تعرض العلامة نفسها. "
     "إذا استخدمت القالب التسويقي المعتمد الذي يتضمن صياغة تفيد بأن أحد المستشارين سيتواصل مع العميل، فاعتبر ذلك تحويلًا فعليًا واجعل transfer=true و transfer_to='wogoud'. "
     "في الرسائل العادية التي لا تستدعي تصعيدًا، تحدث بصورة طبيعية مثل موظف خدمة عملاء محترف، ولا تستخدم تلقائيًا عبارات من نوع تم استلام طلبكم أو تم استلام استفساركم إلا إذا كانت الرسالة فعلًا طلب متابعة أو تنفيذ أو إحالة. "
@@ -35,7 +40,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "أسئلة الهوية أو طريقة العمل تُجاب باختصار على أنك خدمة العملاء الرقمية لمجموعة منافع القانونية من غير تحويل. "
     "إذا كان الطلب خارج النطاق القانوني أو خارج خدمات مجموعة منافع القانونية أو كانت المعلومة غير متوفرة أو الطلب غامضًا، فاعتبره تحويلًا بشريًا. "
     "إذا كانت الرسالة تحتاج متابعة من الموظف المختص فاجعل transfer=true وحدد transfer_to بالشخص المناسب، وإلا فاجعل transfer=false و transfer_to=null. "
-    "عند التحويل، قدّم للعميل ردًا مهنيًا طبيعيًا مناسبًا لسياق الكلام، وإذا كان السياق يتضمن معلومة موثوقة مفيدة فاذكرها باختصار قبل الإشارة إلى المتابعة. "
+    "عند التحويل، قدّم للعميل ردًا مهنيًا طبيعيًا مناسبًا لسياق الكلام، ويكون مختصرًا جدًا، وفي الغالب بصيغة: جواب مباشر قصير ثم جملة قصيرة تفيد بتحويل الطلب للموظف المختص. "
     "عند تحويل الطلب لمراجعة مرفق أو مستند، ابدأ الرد بصياغة عامة ومهنية مثل: شكرًا لتواصلك معنا. "
     "تجنب استخدام عبارة: شكرًا لإرسال المرفق. "
     "والصياغة المفضلة في هذه الحالة هي: شكرًا لتواصلك معنا. سأقوم بتحويل طلبك للمتابعة مع فريقنا المختص لمراجعة المحتوى. يُرجى الانتظار للحظة. "
@@ -48,6 +53,20 @@ DEFAULT_SYSTEM_PROMPT = (
     "إذا كان transfer=false فاجعل transfer_to = null. "
 )
 
+FORCED_ATTACHMENT_TRANSFER_REPLY = (
+    "شكرًا لتواصلك معنا. سأقوم بتحويل طلبك للمتابعة مع فريقنا المختص لمراجعة المحتوى. يُرجى الانتظار للحظة."
+)
+ATTACHMENT_SUMMARY_MARKER = "ملخص موجز للمرفق:"
+APPROVED_MARKETING_TEMPLATE_SOURCE = "source=approved_marketing_response_v1"
+SHORT_TRANSFER_REWRITE_PROMPT = (
+    "أعد صياغة الرد التالي ليكون قصيرًا جدًا ومباشرًا. "
+    "التزم بجملة واحدة أو جملتين قصيرتين فقط. "
+    "إذا كان الرد يفيد بإمكانية المساعدة فابدأ بتأكيد ذلك باختصار مثل نعم يمكن مساعدتك أو نعم يمكن ذلك بحسب السياق. "
+    "اختم بجملة قصيرة تفيد بتحويل الطلب للموظف المختص. "
+    "احذف أي تفاصيل عن الشروط أو الإجراءات أو التكاليف أو الشرح الإضافي. "
+    "أعد فقط النص النهائي بصياغة عربية مهنية.\n\n"
+    "الرد الأصلي:\n{reply}"
+)
 
 class ChatbotResponse(BaseModel):
     reply: str = Field(..., description="Reply shown to the user.")
@@ -56,12 +75,6 @@ class ChatbotResponse(BaseModel):
         default=None,
         description="The human owner for the transfer, or null when no transfer is needed.",
     )
-
-
-FORCED_ATTACHMENT_TRANSFER_REPLY = (
-    "شكرًا لتواصلك معنا. سأقوم بتحويل طلبك للمتابعة مع فريقنا المختص لمراجعة المحتوى. يُرجى الانتظار للحظة."
-)
-ATTACHMENT_SUMMARY_MARKER = "ملخص موجز للمرفق:"
 
 
 class ChatMemory:
@@ -128,6 +141,19 @@ class LangChainChatBot:
         summary = message.split(ATTACHMENT_SUMMARY_MARKER, maxsplit=1)[1].strip()
         return summary or None
 
+    def _shorten_transfer_reply(self, reply: str) -> str:
+        rewritten = self.llm.invoke(
+            SHORT_TRANSFER_REWRITE_PROMPT.format(reply=reply)
+        ).content.strip()
+        return rewritten or reply
+
+    def _should_shorten_transfer_reply(self, reply: str) -> bool:
+        sentence_count = sum(reply.count(mark) for mark in (".", "؟", "!", "\n"))
+        return len(reply) > settings.MAX_TRANSFER_REPLY_LENGTH or sentence_count > 2
+
+    def _uses_approved_marketing_template(self, knowledge_context: str) -> bool:
+        return APPROVED_MARKETING_TEMPLATE_SOURCE in knowledge_context
+
     def generate_reply(self, message: str) -> ChatbotResponse:
         knowledge_context = rag_tool.retrieve_context(message)
         response = self.chain.invoke(
@@ -145,6 +171,12 @@ class LangChainChatBot:
                 response.reply = f"{attachment_summary}\n\n{FORCED_ATTACHMENT_TRANSFER_REPLY}"
             else:
                 response.reply = FORCED_ATTACHMENT_TRANSFER_REPLY
+        elif (
+            response.transfer
+            and not self._uses_approved_marketing_template(knowledge_context)
+            and self._should_shorten_transfer_reply(response.reply)
+        ):
+            response.reply = self._shorten_transfer_reply(response.reply)
 
         self.memory.add_user_message(message)
         self.memory.add_ai_message(response.reply)
