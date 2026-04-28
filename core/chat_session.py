@@ -1,6 +1,6 @@
 from datetime import datetime
-from chatbot import ChatbotResponse
 from chatbot import LangChainChatBot
+from tools import ChatbotResponse
 
 
 class Session:

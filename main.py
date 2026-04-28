@@ -86,7 +86,7 @@ async def chat(request: Request):
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-        effective_message = build_effective_message(chat_request, session.agent.attachment_summary_tool)
+        effective_message = build_effective_message(chat_request)
         if not effective_message:
             raise HTTPException(
                 status_code=422,
