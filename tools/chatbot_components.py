@@ -22,7 +22,8 @@ class ChatbotResponse(BaseModel):
             "Whether the chat should be transferred to a human. Legal/court/prosecution/case/procedure questions "
             "are in scope and should transfer=true, not be rejected as out of scope. Questions about النيابة العامة, "
             "court cases, waiving a case, hearings, lawsuits, judgments, execution, contracts, companies, or licenses are in scope. "
-            "Code/programming/software requests such as writing Python code are outside MLG legal scope and should transfer=false."
+            "Readable customer-service/admin/accounting/support/follow-up messages about MLG are also in scope and should transfer=true. "
+            "Understandable non-legal requests, including code/programming/software requests, are outside MLG legal scope and should transfer=false."
         ),
     )
     transfer_to: Literal["mohamed musa", "eslam ghaleb", "wogoud"] | None = Field(

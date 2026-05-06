@@ -20,7 +20,6 @@ class SessionManager:
         session_data = db.get_session(session_id)
         if session_data is None:
             raise ValueError(f"Session {session_id} not found in database")
-
         session = Session(session_id)
 
         if session_data:
@@ -31,14 +30,25 @@ class SessionManager:
             if session_data.get("updated_at"):
                 session.updated_at = datetime.fromisoformat(session_data["updated_at"])
 
-        messages = db.get_messages(session_id)
+        messages = self._dedupe_messages(db.get_messages(session_id))
+        session.agent.memory.messages = []  # Clear any preexisting before loading
         for msg in messages:
             if msg["role"] == "user":
                 session.agent.memory.add_user_message(msg["content"])
             elif msg["role"] == "assistant":
                 session.agent.memory.add_ai_message(msg["content"])
-
         return session
+
+    def _dedupe_messages(self, messages: list[dict]) -> list[dict]:
+        deduped = []
+        previous_key = None
+        for msg in messages:
+            key = (msg.get("role"), msg.get("content"))
+            if key == previous_key:
+                continue
+            deduped.append(msg)
+            previous_key = key
+        return deduped
 
     def open_session(self, session_id: str) -> Session:
         session = self.active_sessions.get(session_id)

@@ -93,15 +93,14 @@ async def chat(request: Request):
                 detail="message cannot be empty unless attachment_type or attachment_url is provided.",
             )
 
-        session_manager.update_session_title(chat_request.session_id, effective_message)
-        session_manager.save_message(chat_request.session_id, "user", effective_message)
-
         try:
             response = session.generate_reply(effective_message)
         except Exception as exc:
             logger.exception("Failed to generate reply for session %s", chat_request.session_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+        session_manager.update_session_title(chat_request.session_id, effective_message)
+        session_manager.save_message(chat_request.session_id, "user", effective_message)
         session_manager.save_message(chat_request.session_id, "assistant", response.reply)
         return {
             "session_id": chat_request.session_id,

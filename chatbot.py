@@ -2,7 +2,26 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
 from settings import settings
-from tools import AgentExecutor, ChatbotResponse, ChatMemory, rag_tool
+from tools import (
+    AgentExecutor,
+    ChatbotResponse,
+    ChatMemory,
+    FORCED_ATTACHMENT_TRANSFER_REPLY,
+    NOT_UNDERSTOOD_REPLY,
+    OUT_OF_SCOPE_REPLY,
+    TRANSFER_ONLY_REPLY,
+    build_out_of_scope_recheck_chain,
+    is_attachment_transfer_message,
+    is_not_understood_reply,
+    is_out_of_scope_reply,
+    is_readable_text,
+    looks_like_customer_conversation,
+    normalize_transfer_reply,
+    rag_tool,
+    shorten_transfer_reply,
+    should_shorten_transfer_reply,
+    uses_approved_marketing_template,
+)
 
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -13,6 +32,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "Do not provide legal advice, legal analysis, procedural explanations, document analysis, summaries, conditions, costs, or detailed answers. "
     "Important: a legal, court, prosecution, case, contract, company, license, or procedure question is still within MLG's legal-service scope. "
     "Do not reject these messages as out of scope just because you are not allowed to answer them. Transfer them instead. "
+    "MLG scope is broader than legal advice. Any readable customer-service message about MLG, MLG staff, previous replies, ongoing communication, documents, billing, accounting, administration, support, follow-up, or a human conversation is in scope and should be routed. "
+    "If a readable message looks like a continuation of a customer conversation and is not clearly an unrelated personal/general request, route it instead of apologizing. "
     "Legal procedure questions are in scope even when they mention النيابة العامة, المحكمة, قضية, تنازل عن قضية, جلسة, دعوى, بلاغ, حكم, تنفيذ, عقد, شركة, ترخيص, or رخصة. "
     "Wrong behavior: replying with نعتذر، هذا الطلب خارج نطاق خدماتنا القانونية. to a question like هل يمكن التنازل عن القضية للنيابة العامة أم يجب إحضار ورقة؟ "
     "Correct behavior for that kind of question: reply=نعم، سيتم تحويل طلبك للموظف المختص. transfer=true transfer_to='eslam ghaleb'. "
@@ -29,15 +50,14 @@ DEFAULT_SYSTEM_PROMPT = (
     "Do not confuse company factual questions with requests to start a new service. If the customer asks to hire MLG, request a quote, open/form a company, get a license, start a case, or perform a legal service, then use the routing rules and transfer. "
     "For in-scope legal service requests, use a short Arabic confirmation such as: نعم، سيتم تحويل طلبك للموظف المختص. "
     "If the answer is unknown or not available, use only: سيتم تحويل طلبك للموظف المختص. "
-    "If the customer message is random characters, gibberish, not meaningful, or not understandable enough to route, use only: نعتذر، لم نفهم طلبك بوضوح. يرجى توضيح طلبك. and set transfer=false and transfer_to=null. "
+    "If the customer message is random characters, gibberish, not meaningful, or not understandable enough to route, use only: لم نفهم طلبك بوضوح. يرجى توضيح طلبك. and set transfer=false and transfer_to=null. "
     "Examples of unclear/gibberish messages include jwkbckewi, ايتثلاتث, or meaningless text in any language. "
-    "If the request is understandable but truly outside legal services or outside MLG scope, do not reject it and do not apologize for being outside scope; transfer it instead. "
-    "For understandable outside-scope requests, use only: سيتم تحويل طلبك للموظف المختص. and set transfer=true with the fallback transfer owner. "
-    "Examples of understandable outside-scope requests include non-legal topics such as medicine, food, travel, programming, entertainment, or general personal tasks unrelated to MLG legal services. "
-    "Code and programming requests are understandable outside-scope requests. If the customer asks whether you can write code, Python, JavaScript, an app, a website, a script, or software, reply only: سيتم تحويل طلبك للموظف المختص. transfer=true transfer_to='eslam ghaleb'. "
-    "Wrong behavior: replying with نعتذر، هذا الطلب خارج نطاق خدماتنا القانونية. to هل تستطيع كتابة كود بايثون؟ "
-    "Correct behavior for code/programming requests: reply=سيتم تحويل طلبك للموظف المختص. transfer=true transfer_to='eslam ghaleb'. "
-    "Never use an outside-scope apology for legal procedure questions, court questions, prosecution questions, case questions, contract questions, company/license questions, requests for legal help, or understandable non-legal requests; transfer those instead. "
+    "Do not treat vague but readable Arabic or English follow-up messages as gibberish. If the customer says they have questions, forgot details, wants to ask something, or otherwise sends a readable underspecified follow-up, route it to the fallback owner instead of asking for clarification. "
+    "If the request is understandable but truly outside MLG customer-service, admin, accounting, support, and legal-service scope, apologize briefly for being outside scope. "
+    "For understandable outside-scope requests, use only: نعتذر، هذا الطلب خارج نطاق خدماتنا القانونية. and set transfer=false and transfer_to=null. "
+    "Examples of understandable outside-scope requests include non-legal topics such as medicine, food, travel, programming, entertainment, or general personal tasks unrelated to MLG. "
+    "Code and programming requests are understandable outside-scope requests. If the customer asks whether you can write code, Python, JavaScript, an app, a website, a script, or software, reply only: نعتذر، هذا الطلب خارج نطاق خدماتنا القانونية. transfer=false transfer_to=null. "
+    "Never use an outside-scope apology for legal procedure questions, court questions, prosecution questions, case questions, contract questions, company/license questions, or requests for legal help; transfer those instead. "
     "Use the not-understood clarification only when the message is not meaningful or not understandable enough to route. "
     "If the customer sends an attachment, document, or long content that needs review, do not summarize it; use only: سيتم تحويل طلبك للموظف المختص لمراجعة المحتوى. "
     "If a retrieved approved template contains [LINE], convert [LINE] to real newlines and never show the marker. "
@@ -54,26 +74,6 @@ DEFAULT_SYSTEM_PROMPT = (
     "Do not consider a customer existing unless the conversation clearly proves that they are already an MLG client. If not clearly proven, treat them as a new customer. "
     "If transfer=true, transfer_to must be exactly one of: 'mohamed musa', 'eslam ghaleb', or 'wogoud'. "
     "If transfer=false, transfer_to must be null. "
-)
-
-FORCED_ATTACHMENT_TRANSFER_REPLY = (
-    "سيتم تحويل طلبك للموظف المختص لمراجعة المحتوى."
-)
-ATTACHMENT_SUMMARY_MARKER = "ملخص موجز للمرفق:"
-APPROVED_MARKETING_TEMPLATE_SOURCE = "source=approved_marketing_response_v1"
-YES_TRANSFER_REPLY = "نعم، سيتم تحويل طلبك للموظف المختص."
-NO_TRANSFER_REPLY = "لا، سيتم تحويل طلبك للموظف المختص."
-TRANSFER_ONLY_REPLY = "سيتم تحويل طلبك للموظف المختص."
-OUT_OF_SCOPE_REPLY = "نعتذر، هذا الطلب خارج نطاق خدماتنا القانونية."
-SHORT_TRANSFER_REWRITE_PROMPT = (
-    "أعد صياغة الرد التالي ليكون قصيرًا جدًا ومباشرًا. "
-    "التزم بجملة واحدة أو جملتين قصيرتين فقط. "
-    "إذا كان الرد يفيد بإمكانية المساعدة فابدأ بتأكيد ذلك باختصار مثل نعم يمكن مساعدتك أو نعم يمكن ذلك بحسب السياق. "
-    "اختم بجملة قصيرة تفيد بتحويل الطلب للموظف المختص. "
-    "احذف أي تفاصيل عن الشروط أو الإجراءات أو التكاليف أو الشرح الإضافي. "
-    "لا تستخدم أي صياغة اعتذار أو عدم قدرة على الإجابة. "
-    "أعد فقط النص النهائي بصياغة عربية مهنية.\n\n"
-    "الرد الأصلي:\n{reply}"
 )
 
 class LangChainChatBot:
@@ -94,6 +94,10 @@ class LangChainChatBot:
             ]
         )
         self.chain = self.prompt | self.structured_llm
+        self.out_of_scope_recheck_chain = build_out_of_scope_recheck_chain(
+            system_prompt,
+            self.structured_llm,
+        )
         self.agent_executor = AgentExecutor(self)
 
     def _build_llm(self):
@@ -105,40 +109,30 @@ class LangChainChatBot:
             model=settings.OPENAI_MODEL,
         )
 
-    def _is_attachment_transfer_message(self, message: str) -> bool:
-        return (
-            message.startswith("أرسل العميل مرفقًا")
-            or "رابط المرفق:" in message
-            or ATTACHMENT_SUMMARY_MARKER in message
+    def _recheck_out_of_scope_response(
+        self,
+        message: str,
+        previous_reply: str,
+    ) -> ChatbotResponse:
+        return self.out_of_scope_recheck_chain.invoke(
+            {
+                "history": self.memory.messages,
+                "input": message,
+                "previous_reply": previous_reply,
+            }
         )
 
-    def _shorten_transfer_reply(self, reply: str) -> str:
-        rewritten = self.llm.invoke(
-            SHORT_TRANSFER_REWRITE_PROMPT.format(reply=reply)
-        ).content.strip()
-        return rewritten or reply
-
-    def _should_shorten_transfer_reply(self, reply: str) -> bool:
-        sentence_count = sum(reply.count(mark) for mark in (".", "؟", "!", "\n"))
-        return len(reply) > settings.MAX_TRANSFER_REPLY_LENGTH or sentence_count > 2
-
-    def _is_out_of_scope_reply(self, reply: str) -> bool:
-        return "خارج نطاق" in reply or "خارج خدمات" in reply
-
-    def _uses_approved_marketing_template(self, knowledge_context: str) -> bool:
-        return APPROVED_MARKETING_TEMPLATE_SOURCE in knowledge_context
-
-    def _normalize_transfer_reply(self, reply: str, is_attachment: bool = False) -> str:
-        normalized_reply = reply.strip()
-        if is_attachment:
-            return FORCED_ATTACHMENT_TRANSFER_REPLY
-        if normalized_reply.startswith("نعم"):
-            return YES_TRANSFER_REPLY
-        if normalized_reply.startswith("لا"):
-            return NO_TRANSFER_REPLY
-        return TRANSFER_ONLY_REPLY
-
     def generate_reply(self, message: str) -> ChatbotResponse:
+        if is_attachment_transfer_message(message):
+            response = ChatbotResponse(
+                reply=FORCED_ATTACHMENT_TRANSFER_REPLY,
+                transfer=True,
+                transfer_to="eslam ghaleb",
+            )
+            self.memory.add_user_message(message)
+            self.memory.add_ai_message(response.reply)
+            return response
+
         knowledge_context = rag_tool.retrieve_context(message)
         response = self.chain.invoke(
             {
@@ -148,20 +142,42 @@ class LangChainChatBot:
             }
         )
         if not response.reply.strip():
+            response.reply = "شكرًا لك، تم استلام طلبك."
+        elif is_not_understood_reply(response.reply) and is_readable_text(message):
             response.reply = TRANSFER_ONLY_REPLY
             response.transfer = True
             response.transfer_to = response.transfer_to or "eslam ghaleb"
-        elif self._is_out_of_scope_reply(response.reply):
-            response.reply = OUT_OF_SCOPE_REPLY
+        elif is_not_understood_reply(response.reply):
+            response.reply = NOT_UNDERSTOOD_REPLY
             response.transfer = False
             response.transfer_to = None
-        elif response.transfer and self._is_attachment_transfer_message(message):
-            response.reply = self._normalize_transfer_reply(response.reply, is_attachment=True)
-        elif response.transfer and self._uses_approved_marketing_template(knowledge_context):
+        elif is_out_of_scope_reply(response.reply):
+            if is_readable_text(message):
+                response = self._recheck_out_of_scope_response(message, response.reply)
+            if response.transfer:
+                response.reply = normalize_transfer_reply(response.reply)
+            elif is_out_of_scope_reply(response.reply):
+                if looks_like_customer_conversation(message):
+                    response.reply = TRANSFER_ONLY_REPLY
+                    response.transfer = True
+                    response.transfer_to = response.transfer_to or "eslam ghaleb"
+                else:
+                    response.reply = OUT_OF_SCOPE_REPLY
+                    response.transfer = False
+                    response.transfer_to = None
+        elif response.transfer and is_attachment_transfer_message(message):
+            response.reply = FORCED_ATTACHMENT_TRANSFER_REPLY
+        elif response.transfer and uses_approved_marketing_template(knowledge_context):
             response.reply = response.reply.replace("[LINE]", "\n").strip()
-        elif response.transfer:
-            response.reply = self._normalize_transfer_reply(response.reply)
+        elif (
+            response.transfer
+            and not uses_approved_marketing_template(knowledge_context)
+            and should_shorten_transfer_reply(response.reply)
+        ):
+            response.reply = shorten_transfer_reply(self.llm, response.reply)
 
+        # Do not use add_ai_message/add_user_message here again! It's handled by history load.
+        # But we must append the current turn to self.memory.
         self.memory.add_user_message(message)
         self.memory.add_ai_message(response.reply)
         return response

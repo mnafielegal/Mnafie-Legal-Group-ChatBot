@@ -2,11 +2,21 @@ from core.chat_request import ChatRequest
 
 
 def build_effective_message(chat_request: ChatRequest) -> str:
+    if is_non_text_attachment(chat_request):
+        return build_attachment_fallback_message(chat_request)
+
     message = chat_request.message.strip()
     if message:
         return message
 
     return build_attachment_fallback_message(chat_request)
+
+
+def is_non_text_attachment(chat_request: ChatRequest) -> bool:
+    attachment_type = (chat_request.attachment_type or "").strip().lower()
+    if not attachment_type:
+        return False
+    return attachment_type != "text" and not attachment_type.startswith("text/")
 
 
 def build_attachment_fallback_message(chat_request: ChatRequest) -> str:
