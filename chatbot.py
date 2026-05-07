@@ -20,6 +20,7 @@ from tools import (
     looks_like_customer_conversation,
     normalize_transfer_reply,
     rag_tool,
+    rewrite_repeated_reply,
     shorten_transfer_reply,
     should_shorten_transfer_reply,
     uses_approved_marketing_template,
@@ -124,6 +125,25 @@ class LangChainChatBot:
             }
         )
 
+    def _last_assistant_reply(self) -> str | None:
+        for message in reversed(self.memory.messages):
+            if getattr(message, "type", None) == "ai":
+                return message.content
+        return None
+
+    def _finalize_response(self, message: str, response: ChatbotResponse) -> ChatbotResponse:
+        previous_reply = self._last_assistant_reply()
+        if previous_reply and response.reply.strip() == previous_reply.strip():
+            response.reply = rewrite_repeated_reply(
+                self.llm,
+                response.reply,
+                previous_reply,
+            )
+
+        self.memory.add_user_message(message)
+        self.memory.add_ai_message(response.reply)
+        return response
+
     def generate_reply(self, message: str) -> ChatbotResponse:
         has_history = bool(self.memory.messages)
 
@@ -133,9 +153,7 @@ class LangChainChatBot:
                 transfer=True,
                 transfer_to="eslam ghaleb",
             )
-            self.memory.add_user_message(message)
-            self.memory.add_ai_message(response.reply)
-            return response
+            return self._finalize_response(message, response)
 
         if is_call_transfer_request(message):
             response = ChatbotResponse(
@@ -143,9 +161,7 @@ class LangChainChatBot:
                 transfer=True,
                 transfer_to="eslam ghaleb",
             )
-            self.memory.add_user_message(message)
-            self.memory.add_ai_message(response.reply)
-            return response
+            return self._finalize_response(message, response)
 
         knowledge_context = rag_tool.retrieve_context(message)
         response = self.chain.invoke(
@@ -193,8 +209,4 @@ class LangChainChatBot:
         ):
             response.reply = shorten_transfer_reply(self.llm, response.reply)
 
-        # Do not use add_ai_message/add_user_message here again! It's handled by history load.
-        # But we must append the current turn to self.memory.
-        self.memory.add_user_message(message)
-        self.memory.add_ai_message(response.reply)
-        return response
+        return self._finalize_response(message, response)

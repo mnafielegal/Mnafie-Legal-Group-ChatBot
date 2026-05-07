@@ -63,3 +63,26 @@ def test_call_request_is_transfer_request(monkeypatch):
 
     assert reply_rules.is_call_transfer_request("اتصل علي")
     assert reply_rules.is_call_transfer_request("please call me")
+
+
+def test_rewrite_repeated_reply_uses_previous_reply_context(monkeypatch):
+    reply_rules = load_reply_rules_module(monkeypatch)
+
+    class FakeLLM:
+        def __init__(self):
+            self.prompt = None
+
+        def invoke(self, prompt):
+            self.prompt = prompt
+            return SimpleNamespace(content="تم تحويل طلبك إلى الموظف المختص.")
+
+    llm = FakeLLM()
+    rewritten = reply_rules.rewrite_repeated_reply(
+        llm,
+        "سيتم تحويل طلبك للموظف المختص.",
+        "سيتم تحويل طلبك للموظف المختص.",
+    )
+
+    assert rewritten == "تم تحويل طلبك إلى الموظف المختص."
+    assert "reply1" in llm.prompt
+    assert "reply2" in llm.prompt

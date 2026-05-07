@@ -23,6 +23,13 @@ SHORT_TRANSFER_REWRITE_PROMPT = (
     "أعد فقط النص النهائي بصياغة عربية مهنية.\n\n"
     "الرد الأصلي:\n{reply}"
 )
+REPEATED_REPLY_REWRITE_PROMPT = (
+    "أعد صياغة reply1 بصياغة عربية مهنية قصيرة بحيث يكون مختلفًا عن reply2 "
+    "لكن لا تغيّر المعنى ولا تضف معلومات جديدة. "
+    "أعد النص النهائي فقط.\n\n"
+    "reply1:\n{reply1}\n\n"
+    "reply2:\n{reply2}"
+)
 
 
 def is_attachment_transfer_message(message: str) -> bool:
@@ -122,6 +129,16 @@ def normalize_transfer_reply(reply: str, is_attachment: bool = False) -> str:
 def shorten_transfer_reply(llm, reply: str) -> str:
     rewritten = llm.invoke(
         SHORT_TRANSFER_REWRITE_PROMPT.format(reply=reply)
+    ).content.strip()
+    return rewritten or reply
+
+
+def rewrite_repeated_reply(llm, reply: str, previous_reply: str) -> str:
+    rewritten = llm.invoke(
+        REPEATED_REPLY_REWRITE_PROMPT.format(
+            reply1=reply,
+            reply2=previous_reply,
+        )
     ).content.strip()
     return rewritten or reply
 
