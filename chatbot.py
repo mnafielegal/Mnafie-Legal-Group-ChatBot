@@ -12,6 +12,8 @@ from tools import (
     TRANSFER_ONLY_REPLY,
     build_out_of_scope_recheck_chain,
     is_attachment_transfer_message,
+    is_call_transfer_request,
+    is_contextual_follow_up,
     is_not_understood_reply,
     is_out_of_scope_reply,
     is_readable_text,
@@ -123,9 +125,21 @@ class LangChainChatBot:
         )
 
     def generate_reply(self, message: str) -> ChatbotResponse:
+        has_history = bool(self.memory.messages)
+
         if is_attachment_transfer_message(message):
             response = ChatbotResponse(
                 reply=FORCED_ATTACHMENT_TRANSFER_REPLY,
+                transfer=True,
+                transfer_to="eslam ghaleb",
+            )
+            self.memory.add_user_message(message)
+            self.memory.add_ai_message(response.reply)
+            return response
+
+        if is_call_transfer_request(message):
+            response = ChatbotResponse(
+                reply=TRANSFER_ONLY_REPLY,
                 transfer=True,
                 transfer_to="eslam ghaleb",
             )
@@ -143,7 +157,10 @@ class LangChainChatBot:
         )
         if not response.reply.strip():
             response.reply = "شكرًا لك، تم استلام طلبك."
-        elif is_not_understood_reply(response.reply) and is_readable_text(message):
+        elif is_not_understood_reply(response.reply) and (
+            is_readable_text(message)
+            or is_contextual_follow_up(message, has_history)
+        ):
             response.reply = TRANSFER_ONLY_REPLY
             response.transfer = True
             response.transfer_to = response.transfer_to or "eslam ghaleb"

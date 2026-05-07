@@ -53,6 +53,53 @@ def is_readable_text(message: str) -> bool:
     return any(char.isalpha() for char in message)
 
 
+def is_contextual_follow_up(message: str, has_history: bool) -> bool:
+    if not has_history:
+        return False
+
+    stripped = message.strip()
+    if not stripped:
+        return False
+
+    if is_readable_text(stripped):
+        return True
+
+    has_alpha = any(char.isalpha() for char in stripped)
+    has_digit = any(char.isdigit() for char in stripped)
+    is_punctuation_only = all(not char.isalnum() and not char.isspace() for char in stripped)
+    has_punctuation = any(not char.isalnum() and not char.isspace() for char in stripped)
+    is_short_text_follow_up = (
+        has_alpha
+        and not has_digit
+        and has_punctuation
+        and len(stripped.split()) <= 3
+    )
+
+    return is_punctuation_only or is_short_text_follow_up
+
+
+def is_call_transfer_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    if not normalized:
+        return False
+
+    call_phrases = (
+        "اتصل علي",
+        "اتصلوا علي",
+        "اتصل بي",
+        "اتصلوا بي",
+        "تواصل معي",
+        "تواصلوا معي",
+        "كلمني",
+        "كلموني",
+        "ابغى احد يتصل",
+        "ابي احد يتصل",
+        "call me",
+        "contact me",
+    )
+    return any(phrase in normalized for phrase in call_phrases)
+
+
 def looks_like_customer_conversation(message: str) -> bool:
     return is_readable_text(message) and len(message.split()) >= 8
 
